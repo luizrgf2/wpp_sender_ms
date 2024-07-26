@@ -1,3 +1,4 @@
+import { RabbitMQMessageSessionStateProducer } from "../services/rabbitMqSessionStateProducer.service";
 import { TextMenssageInterface } from "../interfaces/message.interface";
 import { RabbitMQMessageConsumer } from "../services/rabbitMQConsumer.service";
 import { BaiLeysWppApi } from "../services/wpp.service";
@@ -5,7 +6,9 @@ import { BaiLeysWppApi } from "../services/wpp.service";
 class StartWpp {
     constructor(
         private readonly rabitMqConsumer: RabbitMQMessageConsumer,
-        private readonly wppApi: BaiLeysWppApi
+        private readonly wppApi: BaiLeysWppApi,
+        private readonly rabbitMqSessionProducer: RabbitMQMessageSessionStateProducer,
+
     ) {}
 
     private async messageConsumerFunc(msg: TextMenssageInterface): Promise<undefined|Error> {
@@ -26,14 +29,17 @@ class StartWpp {
             messageConsumerFunc: (msg)=> this.messageConsumerFunc(msg)
         })
 
+        await this.rabbitMqSessionProducer.startConn()
+
+
         await this.wppApi.start()
     }
 
 }
-
+const rabbitMqSessionProducer = new RabbitMQMessageSessionStateProducer()
 const rabbitConsumer = new RabbitMQMessageConsumer()
-const wppApi = new BaiLeysWppApi()
+const wppApi = new BaiLeysWppApi(rabbitMqSessionProducer)
 
 
-const app = new StartWpp(rabbitConsumer, wppApi)
+const app = new StartWpp(rabbitConsumer, wppApi, rabbitMqSessionProducer)
 app.run()

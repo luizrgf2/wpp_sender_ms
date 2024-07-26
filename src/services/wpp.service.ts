@@ -1,6 +1,7 @@
-import makeWASocket, { DisconnectReason , AuthenticationState, useMultiFileAuthState, ConnectionState, WAMessage, MessageUpsertType} from '@whiskeysockets/baileys'
+import makeWASocket, { DisconnectReason , useMultiFileAuthState, ConnectionState, WAMessage, MessageUpsertType} from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import * as qrCode from 'qrcode-terminal'
+import { RabbitMQMessageSessionStateProducer } from './rabbitMqSessionStateProducer.service';
 
 
 interface MSGUpsertInterface {
@@ -9,6 +10,10 @@ interface MSGUpsertInterface {
 }
 
 export class BaiLeysWppApi {
+    
+    constructor(
+        private readonly rabbitMqSessionProducer: RabbitMQMessageSessionStateProducer,
+    ) {}
 
     private sock: ReturnType<typeof makeWASocket>
 
@@ -26,13 +31,20 @@ export class BaiLeysWppApi {
 
     }
 
-    private connUpdate(update: Partial<ConnectionState>) {
+    private async connUpdate(update: Partial<ConnectionState>) {
         const { connection, lastDisconnect } = update
         if(update.qr) {
             qrCode.generate(update.qr)
+            await this.rabbitMqSessionProducer.sendStateOfSession({
+                qr: update.qr,
+                state: 'await'
+            })
         }
 
         if(connection === 'close') {
+            await this.rabbitMqSessionProducer.sendStateOfSession({
+                state: 'diconnected'
+            })
             const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
             console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect)
             // reconnect if not logged out
@@ -40,6 +52,9 @@ export class BaiLeysWppApi {
                 this.start()
             }
         } else if(connection === 'open') {
+            await this.rabbitMqSessionProducer.sendStateOfSession({
+                state: 'logged'
+            })
             console.log('opened connection')
         }
     }
