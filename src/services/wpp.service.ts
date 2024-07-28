@@ -2,6 +2,9 @@ import makeWASocket, { DisconnectReason , useMultiFileAuthState, ConnectionState
 import { Boom } from '@hapi/boom'
 import * as qrCode from 'qrcode-terminal'
 import { RabbitMQMessageSessionStateProducer } from './rabbitMqSessionStateProducer.service';
+import * as fs from 'fs'
+import { RedisService } from './redis.service';
+import { setTimeout } from 'timers/promises';
 
 
 interface MSGUpsertInterface {
@@ -13,6 +16,7 @@ export class BaiLeysWppApi {
     
     constructor(
         private readonly rabbitMqSessionProducer: RabbitMQMessageSessionStateProducer,
+        private readonly redisService: RedisService
     ) {}
 
     private sock: ReturnType<typeof makeWASocket>
@@ -20,6 +24,13 @@ export class BaiLeysWppApi {
     async start() {
         const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
 
+        if(this.sock) {
+            await this.rabbitMqSessionProducer.sendStateOfSession({
+                state: 'logged'
+            })
+            return
+        }
+        
         this.sock =  makeWASocket({
             auth: state ,
             printQRInTerminal: true,
@@ -49,6 +60,7 @@ export class BaiLeysWppApi {
             console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect)
             // reconnect if not logged out
             if(shouldReconnect) {
+                this.sock = undefined
                 this.start()
             }
         } else if(connection === 'open') {
@@ -82,10 +94,21 @@ export class BaiLeysWppApi {
 
     }
 
+    getRandomNumber(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
     async sendTextMessage(contact: string, textMessage: string) {
         try{
+            const timeConfig = await this.redisService.getConfig()
+
+            const rangomTime = this.getRandomNumber(timeConfig.startTime, timeConfig.endTime)
+
+            await setTimeout(rangomTime * 1000)
+
             const  id = this.createWhatsIdWithPhoneNumber(contact)
             const sendOrError = await this.sock.sendMessage(id, {text: textMessage})
+            await this.redisService.removeContactFromProgressContacts(contact)
         }catch(e) {
             console.log(e)
         }

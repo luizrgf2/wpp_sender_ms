@@ -32,7 +32,10 @@ export class RabbitMQMessageSessionStateProducer {
     }
 
     async sendStateOfSession(message: MessageSessionInterface) {
-        const messageToSend = Buffer.from(JSON.stringify(message))
+        const messageToSend = Buffer.from(JSON.stringify({ 
+            pattern: 'update.session', 
+            data: message 
+         }))
         const sendOrError = this.ch.sendToQueue(RabbitMQConfig.rabbitMqSessionStateQueueName, messageToSend, {
             expiration: 10000,
         })
